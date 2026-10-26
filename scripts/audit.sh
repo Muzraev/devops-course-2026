@@ -132,6 +132,36 @@ check \
     "$WEB_RIGHTS"
 
 echo
+echo "[5] Контейнеризация"
+
+check \
+    "Служба docker активна" \
+    "active" \
+    "$(systemctl is-active docker 2>/dev/null)"
+
+check \
+    "Контейнер СУБД находится в состоянии healthy" \
+    "healthy" \
+    "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null)"
+
+PORT_STATUS="$(
+    ss -H -tln | awk '
+        $4 ~ /:(5000|5432)$/ && $4 !~ /^127\.0\.0\.1:/ { bad = 1 }
+        END { print bad ? "unsafe" : "safe" }
+    '
+)"
+
+check \
+    "Порты 5000 и 5432 не опубликованы вне 127.0.0.1" \
+    "safe" \
+    "$PORT_STATUS"
+
+check \
+    "Права файла /home/devops/app/.env равны 600" \
+    "600" \
+    "$(stat -c '%a' /home/devops/app/.env 2>/dev/null)"
+
+echo
 echo "Пройдено: $PASS, не пройдено: $FAIL"
 
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1
