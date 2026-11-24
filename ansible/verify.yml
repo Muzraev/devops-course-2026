@@ -1,0 +1,37 @@
+---
+- name: Audit deployed VM without changing configuration
+  hosts: vm
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read effective SSH configuration
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: ssh_effective
+      changed_when: false
+    - name: Verify SSH hardening
+      ansible.builtin.assert:
+        that:
+          - "'passwordauthentication no' in ssh_effective.stdout_lines"
+          - "'permitrootlogin no' in ssh_effective.stdout_lines"
+          - "'pubkeyauthentication yes' in ssh_effective.stdout_lines"
+    - name: Inspect application container
+      community.docker.docker_container_info:
+        name: "{{ app_container_name }}"
+        timeout: 180
+      register: app_inspect
+    - name: Verify application is running
+      ansible.builtin.assert:
+        that:
+          - app_inspect.exists
+          - (app_inspect.container | default({})).get('State', {}).get('Running', false)
+        fail_msg: Application container is absent or stopped; restore it with site.yml
+    - name: Read application health through Nginx
+      ansible.builtin.uri:
+        url: http://127.0.0.1/health
+        return_content: true
+      register: audit_health
+    - name: Verify health contract
+      ansible.builtin.assert:
+        that:
+          - audit_health.status == 200
+          - audit_health.json.status == 'ok'
